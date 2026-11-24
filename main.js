@@ -7,39 +7,18 @@ const fs = require('fs');
 // ---------------------------------------------------------------------------
 // Configuration — override these via environment or edit defaults for your setup
 // ---------------------------------------------------------------------------
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'bili-tray');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
-
-function loadConfig() {
+const ENV_FILE = path.join(os.homedir(), '.config', 'bili-tray-env');
+function readEnvFile() {
   try {
-    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
-    return JSON.parse(raw);
+    const raw = fs.readFileSync(ENV_FILE, 'utf8');
+    const match = raw.match(/BILI_PATH="([^"]+)"/);
+    return match ? match[1] : null;
   } catch {
-    return {};
+    return null;
   }
 }
-
-function saveConfig(cfg) {
-  try {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
-  } catch {}
-}
-
-function getConfig(key, fallback) {
-  const cfg = loadConfig();
-  return cfg[key] ?? fallback;
-}
-
-const DEFAULT_BILI = path.join(os.homedir(), '.local', 'bin', 'bili');
-
-function getBiliPath() {
-  return getConfig('bili_path', DEFAULT_BILI);
-}
-
-function getPort() {
-  return getConfig('proxy_port', '8787');
-}
+const BILI = readEnvFile() || path.join(os.homedir(), '.local', 'bin', 'bili');  // default binary path
+const PROXY_PORT = process.env.PROXY_PORT || '8787';
 const LOG_FILE = path.join(os.tmpdir(), 'bili-proxy-console.log');
 
 // Sensitive env vars to *never* pass through to the proxy.
@@ -133,7 +112,7 @@ function buildMenu(tray) {
           title: 'bili tray',
           message: 'bili tray — menu bar control for billion-context proxy.',
           detail: [
-            `proxy port: ${getPort()}`,
+            `proxy port: ${PROXY_PORT}`,
             'Use the CLI to verify: bili --version',
             'Config dir: ~/.config/billion-context/',
           ].join('\n'),
@@ -150,9 +129,6 @@ function buildMenu(tray) {
 }
 
 function showSettings() {
-  const currentBili = getConfig('bili_path', DEFAULT_BILI);
-  const currentPort = getConfig('proxy_port', '8787');
-
   dialog.showOpenDialog({
     properties: ['openFile'],
     title: 'Select bili binary',
@@ -164,14 +140,12 @@ function showSettings() {
     ],
   }).then((result) => {
     if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-      const newPath = result.filePaths[0];
-      const cfg = loadConfig();
-      cfg.bili_path = newPath;
-      saveConfig(cfg);
+      const envFile = path.join(os.homedir(), '.config', 'bili-tray-env');
+      fs.writeFileSync(envFile, `BILI_PATH="${result.filePaths[0]}"\n`);
       dialog.showMessageBox({
         type: 'info',
         title: 'Settings saved',
-        message: `bili path set to ${newPath}`,
+        message: `bili path set to ${result.filePaths[0]}`,
         detail: 'A restart is required for the new path to take effect.',
       });
     }
@@ -179,7 +153,7 @@ function showSettings() {
 }
 
 function checkProxy() {
-  exec(`lsof -i :${getPort()} -sTCP:LISTEN 2>/dev/null | grep -c bili`, (err, stdout) => {
+  exec(`lsof -i :${PROXY_PORT} -sTCP:LISTEN 2>/dev/null | grep -c bili`, (err, stdout) => {
     const count = parseInt(stdout.trim(), 10) || 0;
     const wasRunning = isProxyRunning;
     isProxyRunning = count > 0;
@@ -215,11 +189,11 @@ function startProxy() {
   if (isProxyRunning) return;
 
   // Check that the binary exists before spawning.
-  if (!fs.existsSync(getBiliPath())) {
+  if (!fs.existsSync(BILI)) {
     dialog.showMessageBox({
       type: 'error',
       title: 'Proxy not found',
-      message: `bili binary not found at ${getBiliPath()}`,
+      message: `bili binary not found at ${BILI}`,
       detail: [
         'Set BILI_PATH when launching the app:',
         `  BILI_PATH=/path/to/bili open -a bili-tray`,
@@ -233,7 +207,7 @@ function startProxy() {
 
   logLines = [];
 
-  const proc = spawn(getBiliPath(), ['start', `--port=${getPort()}`], {
+  const proc = spawn(BILI, ['start', `--port=${PROXY_PORT}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: cleanEnv(),  // filtered env — no API keys / tokens leaked to proxy
   });
@@ -258,7 +232,7 @@ function startProxy() {
       dialog.showMessageBox({
         type: 'info',
         title: 'Proxy started',
-        message: `proxy started on port ${getPort()}`,
+        message: `proxy started on port ${PROXY_PORT}`,
       });
     }
   }, 1000);
@@ -266,7 +240,7 @@ function startProxy() {
 
 function stopProxy() {
   if (!proxyProcess) {
-    exec(`lsof -ti :${getPort()} 2>/dev/null | xargs kill -9 2>/dev/null; true`, () => {});
+    exec(`lsof -ti :${PROXY_PORT} 2>/dev/null | xargs kill -9 2>/dev/null; true`, () => {});
   } else {
     proxyProcess.kill('SIGTERM');
   }
@@ -280,7 +254,7 @@ function stopProxy() {
   dialog.showMessageBox({
     type: 'info',
     title: 'Proxy stopped',
-    message: `bili proxy on port ${getPort()} has been stopped.`,
+    message: `bili proxy on port ${PROXY_PORT} has been stopped.`,
   });
 }
 
