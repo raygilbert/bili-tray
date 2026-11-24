@@ -1,0 +1,12 @@
+{
+  "name": "bili-tray",
+  "version": "1.0.0",
+  "description": "Menu bar app for billion-context proxy (bili)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^33.3.1"
+  }
+}
