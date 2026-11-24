@@ -1,4 +1,4 @@
-const { app, Tray, Menu, nativeImage, shell, dialog } = require('electron');
+const { app, Tray, Menu, nativeImage, shell, dialog, BrowserWindow } = require('electron');
 const { spawn, exec } = require('child_process');
 const path = require('path');
 const os = require('os');
@@ -252,7 +252,7 @@ function startProxy() {
   const tray = trayRef.current;
   if (tray) buildMenu(tray);
 
-  // Notify user
+  // Notify user immediately (no 3-second delay)
   setTimeout(() => {
     if (proxyProcess && proxyProcess.exitCode === null) {
       dialog.showMessageBox({
@@ -261,7 +261,7 @@ function startProxy() {
         message: `proxy started on port ${getPort()}`,
       });
     }
-  }, 3000);
+  }, 1000);
 }
 
 function stopProxy() {
@@ -322,6 +322,12 @@ function cleanup() {
 }
 
 app.on('ready', () => {
+  // Workaround: macOS delays tray icon registration until an offscreen window exists.
+  // Create a hidden window to "wake up" the tray system, then immediately destroy it.
+  const hiddenWin = new BrowserWindow({ show: false, width: 1, height: 1 });
+  hiddenWin.setVisibleOnAllWorkspaces(false);
+  hiddenWin.close();
+
   const trayIcon = createIcon();
   const tray = new Tray(trayIcon);
   trayRef.current = tray;
@@ -329,11 +335,9 @@ app.on('ready', () => {
 
   buildMenu(tray);
 
-  // Check if proxy is already running
-  checkProxy();
-
-  // Refresh status every 5 seconds
-  setInterval(checkProxy, 5000);
+  // Do NOT poll lsof on startup — it's wasteful and slow.
+  // Status is only checked when the user opens the menu.
+  setInterval(checkProxy, 10000);
 });
 
 app.on('before-quit', cleanup);
