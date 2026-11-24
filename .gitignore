@@ -1,2 +1,12 @@
 node_modules/
 package-lock.json
+
+# Build artifacts
+dist/
+build.sh
+
+# Generated files
+icon.png
+
+# macOS artifacts
+.DS_Store
