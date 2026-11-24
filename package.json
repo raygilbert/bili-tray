@@ -2,11 +2,34 @@
   "name": "bili-tray",
   "version": "1.0.0",
   "description": "Menu bar app for billion-context proxy (bili)",
+  "author": "Ray Gilbert",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "package": "electron-builder"
   },
-  "dependencies": {
+  "devDependencies": {
+    "create-dmg": "^8.1.0",
+    "electron-packager": "^17.1.2",
+    "electron-builder": "^26.18.0",
     "electron": "^33.3.1"
+  },
+  "build": {
+    "appId": "com.raygilbert.bili-tray",
+    "productName": "bili-tray",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "icon.png",
+      "target": [
+        {
+          "target": "dmg"
+        }
+      ]
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "icon.png"
+    ]
   }
 }

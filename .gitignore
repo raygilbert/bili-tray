@@ -5,8 +5,5 @@ package-lock.json
 dist/
 build.sh
 
-# Generated files
-icon.png
-
 # macOS artifacts
 .DS_Store
