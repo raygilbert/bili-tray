@@ -64,3 +64,22 @@ bilitray logs             # view proxy output
 - Proxy stdout/stderr is saved to `/tmp/bili-proxy-console.log` and **sanitized** before writing: common key/token patterns are redacted.
 - The tray icon is generated from inline SVG — no external assets or requests.
 - The "Open Config" menu opens the config **directory** (`~/.config/billion-context/`) rather than any specific file path.
+
+## Building a DMG Installer
+
+Builds a code-signed `.dmg` installer for distribution:
+
+```bash
+# Development-signed (runs locally, unsigned warning on other machines)
+bash build.sh
+
+# Production-signed + notarized (no warnings, installs silently)
+APPLE_TEAM_ID=XXXXXXXXXX \
+APPLE_ID=your@email.com \
+APPLE_PASSWORD=app-specific-password \
+bash build.sh
+```
+
+This produces `dist/bili-tray 1.0.0.dmg` (name includes version).
+
+**Note:** The build produces an **Universal binary** (x86_64 + arm64) so the app runs natively on both Intel and Apple Silicon Macs. Code signing is done post-packaging via `codesign` directly. Electron-packager's `--osx-sign` integration has a bug with sub-option parsing, so the build packages unsigned and signs the `.app` ourselves.
