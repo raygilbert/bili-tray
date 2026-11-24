@@ -33,16 +33,21 @@ let proxyProcess = null;
 let isProxyRunning = false;
 let logLines = [];
 
-// Build a tray icon from SVG
+// Build a tray icon from a pre-generated PNG file.
+// macOS tray icons don't support SVG, so we use a 22x22 PNG.
 function createIcon() {
-  const { nativeTheme } = require('electron');
-  const size = 16;
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-      <circle cx="8" cy="8" r="7" fill="${nativeTheme.shouldUseDarkThemes ? '#4a90d9' : '#2563eb'}"/>
-      <text x="8" y="11" text-anchor="middle" fill="white" font-size="8" font-family="sans-serif" font-weight="bold">b</text>
-    </svg>`;
-  return nativeImage.createFromBuffer(Buffer.from(svg), size);
+  const iconPath = path.join(__dirname, 'icon-22.png');
+  try {
+    const img = nativeImage.createFromPath(iconPath);
+    return img.isEmpty() ? createDefaultIcon() : img;
+  } catch {
+    return createDefaultIcon();
+  }
+}
+
+// Fallback: try to load the real icon; only give up when the file truly doesn't exist.
+function createDefaultIcon() {
+  return nativeImage.createEmpty();
 }
 
 // Sanitize a line of text by redacting known sensitive patterns.
