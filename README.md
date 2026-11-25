@@ -2,7 +2,7 @@
 
 Menu bar app for the [billion-context proxy](https://github.com/ranxianglei/billion-context).
 
-Shows a blue "b" icon in the macOS menu bar with controls to **Start / Stop / Restart** the bili proxy, view config, and read console output.
+Shows a blue "b" icon in the macOS menu bar with controls to **Start / Stop / Restart** the bili proxy, open its web UI, view config, and read console output. **Open bili UI** opens `http://localhost:8787/` with the default port.
 
 ## Files
 
@@ -12,6 +12,8 @@ package.json     Dependencies (Electron)
 ```
 
 ## Setup
+
+First, install [billion-context (`bili`)](https://github.com/ranxianglei/billion-context) and Node.js. The tray app does not bundle either dependency. Verify that `bili --version` works before installing the tray app. By default, the tray app looks for `bili` at `~/.local/bin/bili`; use **Settings** in the tray menu if it is installed elsewhere.
 
 ```bash
 cd bili-tray
@@ -49,11 +51,11 @@ bilitray start / stop     # terminal controls (mirrors the tray)
 bilitray logs             # view proxy output
 ```
 
-### Environment variables (optional overrides)
+### Configuration
 
-| Variable | Default | Purpose |
+| Setting | Default | Purpose |
 |----------|---------|---------|
-| `BILI_PATH` | `bili` (from `$PATH`) | Path to the bili binary |
+| `bili` binary | `~/.local/bin/bili` | Change through the tray menu's **Settings**; restart the app afterward. |
 | `PROXY_PORT` | `8787` | Proxy listen port |
 | `BILI_TRAY_DIR` | `~/dev/bili-tray` | Location of this project (CLI only) |
 

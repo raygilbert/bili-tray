@@ -82,6 +82,18 @@ function buildMenu(tray) {
     },
     { type: 'separator' },
     {
+      label: 'Open bili UI',
+      click: () => {
+        shell.openExternal(`http://localhost:${PROXY_PORT}/`).catch((err) => {
+          dialog.showMessageBox({
+            type: 'error',
+            title: 'Could not open bili UI',
+            message: err.message,
+          });
+        });
+      },
+    },
+    {
       label: 'Open Config',
       click: () => {
         const configDir = path.join(os.homedir(), '.config', 'billion-context');
@@ -197,6 +209,14 @@ function cleanEnv() {
   for (const key of SENSITIVE_KEYS) {
     delete env[key];
   }
+  // Finder-launched apps may not inherit Homebrew's PATH. The bili launcher
+  // uses `#!/usr/bin/env node`, so include the usual Node installation dirs.
+  env.PATH = [...new Set([
+    path.dirname(BILI),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    ...(env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin').split(path.delimiter),
+  ].filter(Boolean))].join(path.delimiter);
   return env;
 }
 
