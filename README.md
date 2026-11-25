@@ -82,4 +82,4 @@ bash build.sh
 
 This produces `dist/bili-tray 1.0.0.dmg` (name includes version).
 
-**Note:** The build produces an **Universal binary** (x86_64 + arm64) so the app runs natively on both Intel and Apple Silicon Macs. Code signing is done post-packaging via `codesign` directly. Electron-packager's `--osx-sign` integration has a bug with sub-option parsing, so the build packages unsigned and signs the `.app` ourselves.
+**Note:** The build produces an **Apple Silicon (arm64) binary**. Code signing is done post-packaging via `codesign` directly. Electron-packager's `--osx-sign` integration has a bug with sub-option parsing, so the build packages unsigned and signs the `.app` ourselves.

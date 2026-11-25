@@ -325,6 +325,10 @@ function cleanup() {
   }
 }
 
+// The hidden startup window is intentionally closed. Keep the tray app alive
+// when it becomes the last window; the Quit menu item handles termination.
+app.on('window-all-closed', () => {});
+
 app.on('ready', () => {
   // Workaround: macOS delays tray icon registration until an offscreen window exists.
   // Create a hidden window, then immediately register the tray (the window close is async).
