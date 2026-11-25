@@ -327,23 +327,17 @@ function cleanup() {
 
 app.on('ready', () => {
   // Workaround: macOS delays tray icon registration until an offscreen window exists.
-  // Create a hidden window, wait for it to close, then register the tray.
+  // Create a hidden window, then immediately register the tray (the window close is async).
   const hiddenWin = new BrowserWindow({ show: false, width: 1, height: 1 });
   hiddenWin.setVisibleOnAllWorkspaces(false);
-  hiddenWin.once('closed', () => {
-    hiddenWin.removeAllListeners('closed');
-    registerTray();
-  });
   hiddenWin.close();
-});
 
-function registerTray() {
   const trayIcon = createIcon();
   const tray = new Tray(trayIcon);
   trayRef.current = tray;
   tray.setToolTip('bili proxy — stopped');
   buildMenu(tray);
   setInterval(checkProxy, 10000);
-}
+});
 
 app.on('before-quit', cleanup);
