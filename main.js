@@ -1,5 +1,6 @@
 const { app, Tray, Menu, nativeImage, shell, dialog, BrowserWindow } = require('electron');
 const { spawn, exec } = require('child_process');
+const net = require('net');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -28,16 +29,22 @@ const SENSITIVE_KEYS = new Set([
   'GOOGLE_API_KEY', 'DASHSCOPE_API_KEY', 'HUGGING_FACE_API_KEY',
   'MONGODB_URI', 'REDIS_URL', 'DATABASE_URL', 'JWT_SECRET',
   'SESSION_SECRET', 'MAGIC_STRING', 'BILI_TOKEN',
+  'AZURE_API_KEY', 'AWS_SECRET_ACCESS_KEY', 'AWS_ACCESS_KEY_ID',
+  'GOOGLE_APPLICATION_CREDENTIALS', 'MCP_SERVER_URL',
 ]);
 
-// Regexes to redact from logged proxy output (keys, tokens, secrets).
-// We match common patterns used by LLM providers and cloud APIs.
-const SENSITIVE_PATTERNS = [
-  // Anthropic
-  /[A-Za-z0-9]{24,}/g,
-  // Generic base64-looking tokens (long enough to be secrets)
-  /"[A-Za-z0-9_\-+=]{40,}"/g,
-];
+// Sanitize arbitrary data chunks (binary-safe) by redacting known sensitive patterns.
+function sanitizeChunk(chunk) {
+  return String(chunk)
+    .replace(/"(sk-[a-zA-Z0-9]{20,})"/g, '"$1***"')
+    .replace(/"(sk-ant-[a-zA-Z0-9]{20,})"/g, '"$1***"')
+    .replace(/(api[_\-]?key["\s:=]+)([A-Za-z0-9_\-+=]{20,})/gi, '$1"***"')
+    .replace(/(token["\s:=]+)([A-Za-z0-9_\-+=]{40,})/gi, '$1"***"')
+    .replace(/(secret["\s:=]+)([A-Za-z0-9_\-+=]{20,})/gi, '$1"***"')
+    .replace(/(key["\s:=]+)([A-Za-z0-9_\-+=]{24,})/gi, '$1"***"');
+}
+
+const sanitizeLine = sanitizeChunk;
 
 let proxyProcess = null;
 let isProxyRunning = false;
@@ -58,19 +65,6 @@ function createIcon() {
 // Fallback: try to load the real icon; only give up when the file truly doesn't exist.
 function createDefaultIcon() {
   return nativeImage.createEmpty();
-}
-
-// Sanitize a line of text by redacting known sensitive patterns.
-function sanitizeLine(line) {
-  // Simple heuristic: redact anything that looks like an API key
-  // (24+ char base64 string preceded by common key-related tokens)
-  return String(line)
-    .replace(/"(sk-[a-zA-Z0-9]{20,})"/g, '"$1***"')
-    .replace(/"(sk-ant-[a-zA-Z0-9]{20,})"/g, '"$1***"')
-    .replace(/(api[_\-]?key["\s:=]+)([A-Za-z0-9_\-+=]{20,})/gi, '$1"***"')
-    .replace(/(token["\s:=]+)([A-Za-z0-9_\-+=]{40,})/gi, '$1"***"')
-    .replace(/(secret["\s:=]+)([A-Za-z0-9_\-+=]{20,})/gi, '$1"***"')
-    .replace(/(key["\s:=]+)([A-Za-z0-9_\-+=]{24,})/gi, '$1"***"');
 }
 
 function buildMenu(tray) {
@@ -140,12 +134,18 @@ function showSettings() {
     ],
   }).then((result) => {
     if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+      const filePath = result.filePaths[0];
+      try { fs.accessSync(filePath, fs.X_OK); } catch {
+        dialog.showMessageBox({ type: 'error', title: 'Not executable', message: `"${filePath}" is not executable.` });
+        return;
+      }
       const envFile = path.join(os.homedir(), '.config', 'bili-tray-env');
-      fs.writeFileSync(envFile, `BILI_PATH="${result.filePaths[0]}"\n`);
+      const escaped = filePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      fs.writeFileSync(envFile, `BILI_PATH="${escaped}"\n`);
       dialog.showMessageBox({
         type: 'info',
         title: 'Settings saved',
-        message: `bili path set to ${result.filePaths[0]}`,
+        message: `bili path set to ${filePath}`,
         detail: 'A restart is required for the new path to take effect.',
       });
     }
@@ -153,15 +153,31 @@ function showSettings() {
 }
 
 function checkProxy() {
-  exec(`lsof -i :${PROXY_PORT} -sTCP:LISTEN 2>/dev/null | grep -c bili`, (err, stdout) => {
-    const count = parseInt(stdout.trim(), 10) || 0;
+  const socket = new net.Socket();
+  socket.setTimeout(2000);
+  const onSocketError = () => { socket.destroy(); };
+  socket.on('error', onSocketError);
+  socket.on('connect', () => {
+    socket.destroy();
     const wasRunning = isProxyRunning;
-    isProxyRunning = count > 0;
+    isProxyRunning = true;
     if (isProxyRunning !== wasRunning) {
       const tray = trayRef.current;
       if (tray) buildMenu(tray);
     }
   });
+  socket.on('timeout', () => {
+    socket.destroy();
+    const wasRunning = isProxyRunning;
+    isProxyRunning = false;
+    if (isProxyRunning !== wasRunning) {
+      const tray = trayRef.current;
+      if (tray) buildMenu(tray);
+    }
+  });
+  try {
+    socket.connect(Number(PROXY_PORT), '127.0.0.1');
+  } catch {}
 }
 
 let trayRef = { current: null };
@@ -170,8 +186,7 @@ function appendLog(msg) {
   logLines.push(msg);
   if (logLines.length > 500) logLines = logLines.slice(-300);
   try {
-    const sanitized = sanitizeLine(msg);
-    fs.writeFileSync(LOG_FILE, logLines.join(''));
+    fs.writeFileSync(LOG_FILE, logLines.map(sanitizeChunk).join(''));
   } catch {}
 }
 
@@ -216,6 +231,17 @@ function startProxy() {
 
   proc.stdout.on('data', (d) => appendLog(d.toString()));
   proc.stderr.on('data', (d) => appendLog(d.toString()));
+  proc.on('error', (err) => {
+    isProxyRunning = false;
+    proxyProcess = null;
+    dialog.showMessageBox({
+      type: 'error',
+      title: 'Proxy error',
+      message: `Failed to start proxy: ${err.message}`,
+    });
+    const tray = trayRef.current;
+    if (tray) buildMenu(tray);
+  });
   proc.on('close', (code) => {
     isProxyRunning = false;
     proxyProcess = null;
@@ -226,21 +252,23 @@ function startProxy() {
   const tray = trayRef.current;
   if (tray) buildMenu(tray);
 
-  // Notify user immediately (no 3-second delay)
-  setTimeout(() => {
-    if (proxyProcess && proxyProcess.exitCode === null) {
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'Proxy started',
-        message: `proxy started on port ${PROXY_PORT}`,
-      });
-    }
-  }, 1000);
+  // Notify user (skip dialog during restart to avoid double notifications)
+  if (!startProxy.skipDialog) {
+    setTimeout(() => {
+      if (proxyProcess && proxyProcess.exitCode === null) {
+        dialog.showMessageBox({
+          type: 'info',
+          title: 'Proxy started',
+          message: `proxy started on port ${PROXY_PORT}`,
+        });
+      }
+    }, 1000);
+  }
 }
 
 function stopProxy() {
   if (!proxyProcess) {
-    exec(`lsof -ti :${PROXY_PORT} 2>/dev/null | xargs kill -9 2>/dev/null; true`, () => {});
+    exec(`lsof -ti :${PROXY_PORT} 2>/dev/null | xargs -r kill -9 2>/dev/null; true`, () => {});
   } else {
     proxyProcess.kill('SIGTERM');
   }
@@ -260,8 +288,10 @@ function stopProxy() {
 
 function restartProxy() {
   stopProxy();
+  startProxy.skipDialog = true;
   const logTimer = setTimeout(() => {
     startProxy();
+    startProxy.skipDialog = false;
   }, 2000);
   logTimer.unref?.();
 }
@@ -297,21 +327,23 @@ function cleanup() {
 
 app.on('ready', () => {
   // Workaround: macOS delays tray icon registration until an offscreen window exists.
-  // Create a hidden window to "wake up" the tray system, then immediately destroy it.
+  // Create a hidden window, wait for it to close, then register the tray.
   const hiddenWin = new BrowserWindow({ show: false, width: 1, height: 1 });
   hiddenWin.setVisibleOnAllWorkspaces(false);
+  hiddenWin.once('closed', () => {
+    hiddenWin.removeAllListeners('closed');
+    registerTray();
+  });
   hiddenWin.close();
+});
 
+function registerTray() {
   const trayIcon = createIcon();
   const tray = new Tray(trayIcon);
   trayRef.current = tray;
   tray.setToolTip('bili proxy — stopped');
-
   buildMenu(tray);
-
-  // Do NOT poll lsof on startup — it's wasteful and slow.
-  // Status is only checked when the user opens the menu.
   setInterval(checkProxy, 10000);
-});
+}
 
 app.on('before-quit', cleanup);
